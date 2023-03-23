@@ -1,3 +1,31 @@
+# 增加：反DLL调试
+```c
+#include "detours.h"
+
+HOOK_IsDebuggerPresent([](HOOK_State state, LPCWSTR msg) {
+  if (state == HOOK_Catch) {
+    // 反调试触发 IsDebuggerPresent
+  }
+  else {
+    // error -> msg
+  }
+});
+```
+
+# 增加：反DLL注入
+```c
+#include "detours.h"
+
+HOOK_VirtualAllocEx([](HOOK_State state, LPCWSTR msg) {
+  if (state == HOOK_Catch) {
+    // 反DLL注入触发 VirtualAllocEx
+  }
+  else {
+    // error -> msg
+  }
+});
+```
+
 # Microsoft Research Detours Package
 
 Detours is a software package for monitoring and instrumenting API calls on Windows. Detours

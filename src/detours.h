@@ -1249,7 +1249,7 @@ enum HOOK_State : LONG {
 typedef void (*HOOK_Cbk)(const HOOK_State state, LPCWSTR msg);
 
 /*
- * 反调试（创建线程定时100ms检测）
+ * 反调试（创建线程定时100ms检测IsDebuggerPresent）
  * cbk 仅回调一次，线程异步回调，请注意线程安全问题
  */
 void WINAPI HOOK_IsDebuggerPresent(HOOK_Cbk cbk);
