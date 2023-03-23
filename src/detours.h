@@ -1228,6 +1228,57 @@ BOOL WINAPI DetourAreSameGuid(_In_ REFGUID left, _In_ REFGUID right);
 #endif // DETOURS_INTERNAL
 #endif // __cplusplus
 
+//////////////////////////////////////////////////////////////////////////////
+// modified by zxffffffff
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
+/*
+ * 回调状态
+ */
+enum HOOK_State : LONG {
+    HOOK_Error = 0x40, // msg 传递 errMsg
+    HOOK_Catch = 0x80,
+};
+
+ /*
+  * 回调函数
+  */
+typedef void (*HOOK_Cbk)(const HOOK_State state, LPCWSTR msg);
+
+/*
+ * 反调试（创建线程定时100ms检测）
+ * cbk 仅回调一次，线程异步回调，请注意线程安全问题
+ */
+void WINAPI HOOK_IsDebuggerPresent(HOOK_Cbk cbk);
+
+/*
+ * 反DLL注入（LoadLibraryA，LoadLibraryW）
+ * cbk 回调多次，配合msg获取lib数据
+ */
+void WINAPI HOOK_LoadLibrary(HOOK_Cbk cbk);
+
+/*
+ * 反DLL注入（VirtualAllocEx）
+ * cbk 回调多次
+ */
+void WINAPI HOOK_VirtualAllocEx(HOOK_Cbk cbk);
+
+/*
+ * 反DLL注入（CreateRemoteThread）
+ * cbk 回调多次
+ */
+void WINAPI HOOK_CreateRemoteThread(HOOK_Cbk cbk);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
+// modified by zxffffffff
+//////////////////////////////////////////////////////////////////////////////
+
 #endif // _DETOURS_H_
 //
 ////////////////////////////////////////////////////////////////  End of File.
