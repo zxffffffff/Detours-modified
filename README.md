@@ -2,9 +2,9 @@
 ```c
 #include "detours.h"
 
-HOOK_IsDebuggerPresent([](HOOK_State state, LPCWSTR msg) {
+HOOK_IsDebugger([](HOOK_State state, LPCWSTR msg) {
   if (state == HOOK_Catch) {
-    // 反调试触发 IsDebuggerPresent
+    // 反调试触发
   }
   else {
     // error -> msg
@@ -18,7 +18,7 @@ HOOK_IsDebuggerPresent([](HOOK_State state, LPCWSTR msg) {
 
 HOOK_VirtualAllocEx([](HOOK_State state, LPCWSTR msg) {
   if (state == HOOK_Catch) {
-    // 反DLL注入触发 VirtualAllocEx
+    // 反DLL注入触发
   }
   else {
     // error -> msg

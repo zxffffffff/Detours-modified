@@ -1244,15 +1244,15 @@ enum HOOK_State : LONG {
 };
 
  /*
-  * 回调函数
+  * 回调函数，线程异步回调，请注意线程安全问题
   */
 typedef void (*HOOK_Cbk)(const HOOK_State state, LPCWSTR msg);
 
 /*
- * 反调试（创建线程定时100ms检测IsDebuggerPresent）
- * cbk 仅回调一次，线程异步回调，请注意线程安全问题
+ * 反调试（创建线程定时100ms检测，有多种检测手段）
+ * cbk 回调一次
  */
-void WINAPI HOOK_IsDebuggerPresent(HOOK_Cbk cbk);
+void WINAPI HOOK_IsDebugger(HOOK_Cbk cbk, LONG sleep_ms = 100);
 
 /*
  * 反DLL注入（LoadLibraryA，LoadLibraryW）
@@ -1267,8 +1267,8 @@ void WINAPI HOOK_LoadLibrary(HOOK_Cbk cbk);
 void WINAPI HOOK_VirtualAllocEx(HOOK_Cbk cbk);
 
 /*
- * 反DLL注入（CreateRemoteThread）
- * cbk 回调多次
+ * 反DLL注入（CreateRemoteThread，CreateRemoteThreadEx）
+ * cbk 回调多次，注意自己创建线程也会走这里（CreateThread）
  */
 void WINAPI HOOK_CreateRemoteThread(HOOK_Cbk cbk);
 

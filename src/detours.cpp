@@ -2604,6 +2604,9 @@ BOOL WINAPI DetourAreSameGuid(_In_ REFGUID left, _In_ REFGUID right)
 //////////////////////////////////////////////////////////////////////////////
 // modified by zxffffffff
 
+#define NtCurrentProcess        ((HANDLE)(LONG_PTR)-1)
+#define NtCurrentThread         ((HANDLE)(LONG_PTR)-2)
+
 static LPCWSTR ToWStr(LPCSTR lp)
 {
     constexpr size_t len = 4096;
@@ -2613,157 +2616,81 @@ static LPCWSTR ToWStr(LPCSTR lp)
     return buf;
 }
 
-void WINAPI HOOK_IsDebuggerPresent(HOOK_Cbk cbk)
+static HOOK_Cbk HOOK_IsDebugger_Cbk = NULL;
+static BOOL Check_IsDebuggerPresent()
 {
-    auto worker_thread = [](LPVOID lpParam) -> DWORD {
-        HOOK_Cbk cbk = (HOOK_Cbk)lpParam;
+    // ¼ì²âµ÷ÊÔ×´Ì¬£¨PEBµÄBeingDebugger£©
+    if (IsDebuggerPresent()) {
+        HOOK_IsDebugger_Cbk(HOOK_Catch, L"IsDebuggerPresent");
+        return TRUE;
+    }
+    return FALSE;
+}
+static BOOL Check_CheckRemoteDebuggerPresent()
+{
+    // ¼ì²éÔ¶³Ìµ÷ÊÔ£¨ProcessDebugPort£©
+    BOOL pbDebuggerPresent = FALSE;
+    CheckRemoteDebuggerPresent(NtCurrentProcess, &pbDebuggerPresent);
+    if (pbDebuggerPresent) {
+        HOOK_IsDebugger_Cbk(HOOK_Catch, L"CheckRemoteDebuggerPresent");
+        return TRUE;
+    }
+    return FALSE;
+}
+static BOOL Check_GetThreadContext()
+{
+    // ¼ì²âÓ²¼þ¶Ïµã£¨µ÷ÊÔ¼Ä´æÆ÷DR0\DIR1\DR2\DIR3£©
+    CONTEXT pContext = { 0 };
+    pContext.EFlags = CONTEXT_ALL;
+    if (GetThreadContext(NtCurrentThread, &pContext)) {
+        if (pContext.Dr0 || pContext.Dr1 || pContext.Dr2 || pContext.Dr3) {
+            HOOK_IsDebugger_Cbk(HOOK_Catch, L"GetThreadContext");
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+void WINAPI HOOK_IsDebugger(HOOK_Cbk cbk, LONG sleep_ms)
+{
+    HOOK_IsDebugger_Cbk = cbk;
+
+    static LONG g_sleep_ms;
+    g_sleep_ms = sleep_ms;
+
+    auto worker_thread = [](LPVOID) -> DWORD {
         while (1) {
-            if (IsDebuggerPresent()) {
-                cbk(HOOK_Catch, L"");
+            if (Check_IsDebuggerPresent())
                 return 0;
-            }
-            Sleep(100);
+            if (Check_CheckRemoteDebuggerPresent())
+                return 0;
+            if (Check_GetThreadContext())
+                return 0;
+            Sleep(g_sleep_ms);
         }
     };
 
     DWORD dwThread = 0;
-    HANDLE hThread = CreateThread(NULL, 0, worker_thread, (LPVOID)cbk, 0, &dwThread);
+    HANDLE hThread = CreateThread(NULL, 0, worker_thread, 0, 0, &dwThread);
     if (!hThread) {
         // error
-        cbk(HOOK_Error, L"CreateThread err");
+        HOOK_IsDebugger_Cbk(HOOK_Error, L"CreateThread err");
     }
     CloseHandle(hThread);
 }
 
-// [0]
 static HOOK_Cbk HOOK_LoadLibrary_Cbk = NULL;
-static HOOK_Cbk HOOK_VirtualAllocEx_Cbk = NULL;
-static HOOK_Cbk HOOK_CreateRemoteThread_Cbk = NULL;
-
-
-// [1]
-static
-WINBASEAPI
-__out_opt
-HMODULE
-(WINAPI * HOOK_Real_LoadLibraryA)(
-    __in LPCSTR lpLibFileName
-) = NULL;
-
-static
-WINBASEAPI
-__out_opt
-HMODULE
-(WINAPI * HOOK_Real_LoadLibraryW)(
-    __in LPCWSTR lpLibFileName
-) = NULL;
-
-static
-WINBASEAPI
-__bcount_opt(dwSize)
-LPVOID
-(WINAPI * HOOK_Real_VirtualAllocEx)(
-    __in     HANDLE hProcess,
-    __in_opt LPVOID lpAddress,
-    __in     SIZE_T dwSize,
-    __in     DWORD flAllocationType,
-    __in     DWORD flProtect
-) = NULL;
-
-static
-_Ret_maybenull_
-HANDLE
-(WINAPI* HOOK_Real_CreateRemoteThread)(
-    _In_ HANDLE hProcess,
-    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    _In_ SIZE_T dwStackSize,
-    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
-    _In_opt_ LPVOID lpParameter,
-    _In_ DWORD dwCreationFlags,
-    _Out_opt_ LPDWORD lpThreadId
-) = NULL;
-
-// [2]
-static
-WINBASEAPI
-__out_opt
-HMODULE
-WINAPI
-HOOK_Catch_LoadLibraryA(
-    __in LPCSTR lpLibFileName
-)
+static WINBASEAPI __out_opt HMODULE(WINAPI* HOOK_Real_LoadLibraryA)(__in LPCSTR lpLibFileName) = NULL;
+static WINBASEAPI __out_opt HMODULE WINAPI HOOK_Catch_LoadLibraryA(__in LPCSTR lpLibFileName)
 {
     HOOK_LoadLibrary_Cbk(HOOK_Catch, ToWStr(lpLibFileName));
-
     return HOOK_Real_LoadLibraryA(lpLibFileName);
 }
-
-static
-WINBASEAPI
-__out_opt
-HMODULE
-WINAPI
-HOOK_Catch_LoadLibraryW(
-    __in LPCWSTR lpLibFileName
-)
+static WINBASEAPI __out_opt HMODULE(WINAPI* HOOK_Real_LoadLibraryW)(__in LPCWSTR lpLibFileName) = NULL;
+static WINBASEAPI __out_opt HMODULE WINAPI HOOK_Catch_LoadLibraryW(__in LPCWSTR lpLibFileName)
 {
     HOOK_LoadLibrary_Cbk(HOOK_Catch, lpLibFileName);
-
     return HOOK_Real_LoadLibraryW(lpLibFileName);
 }
-
-static
-WINBASEAPI
-__bcount_opt(dwSize)
-LPVOID
-WINAPI
-HOOK_Catch_VirtualAllocEx(
-    __in     HANDLE hProcess,
-    __in_opt LPVOID lpAddress,
-    __in     SIZE_T dwSize,
-    __in     DWORD flAllocationType,
-    __in     DWORD flProtect
-)
-{
-    HOOK_VirtualAllocEx_Cbk(HOOK_Catch, L"");
-
-    return HOOK_Real_VirtualAllocEx(
-        hProcess,
-        lpAddress,
-        dwSize,
-        flAllocationType,
-        flProtect
-    );
-}
-
-static
-WINBASEAPI
-_Ret_maybenull_
-HANDLE
-WINAPI
-HOOK_Catch_CreateRemoteThread(
-    _In_ HANDLE hProcess,
-    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
-    _In_ SIZE_T dwStackSize,
-    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
-    _In_opt_ LPVOID lpParameter,
-    _In_ DWORD dwCreationFlags,
-    _Out_opt_ LPDWORD lpThreadId
-)
-{
-    HOOK_CreateRemoteThread_Cbk(HOOK_Catch, L"");
-
-    return HOOK_Real_CreateRemoteThread(
-        hProcess,
-        lpThreadAttributes,
-        dwStackSize,
-        lpStartAddress,
-        lpParameter,
-        dwCreationFlags,
-        lpThreadId
-    );
-}
-
 void __stdcall HOOK_LoadLibrary(HOOK_Cbk cbk)
 {
     HOOK_LoadLibrary_Cbk = cbk;
@@ -2779,6 +2706,31 @@ void __stdcall HOOK_LoadLibrary(HOOK_Cbk cbk)
         HOOK_LoadLibrary_Cbk(HOOK_Error, L"DetourTransactionCommit err");
 }
 
+static HOOK_Cbk HOOK_VirtualAllocEx_Cbk = NULL;
+static WINBASEAPI __bcount_opt(dwSize) LPVOID(WINAPI* HOOK_Real_VirtualAllocEx)(
+    __in     HANDLE hProcess,
+    __in_opt LPVOID lpAddress,
+    __in     SIZE_T dwSize,
+    __in     DWORD flAllocationType,
+    __in     DWORD flProtect
+    ) = NULL;
+static WINBASEAPI __bcount_opt(dwSize) LPVOID WINAPI HOOK_Catch_VirtualAllocEx(
+    __in     HANDLE hProcess,
+    __in_opt LPVOID lpAddress,
+    __in     SIZE_T dwSize,
+    __in     DWORD flAllocationType,
+    __in     DWORD flProtect
+)
+{
+    HOOK_VirtualAllocEx_Cbk(HOOK_Catch, L"");
+    return HOOK_Real_VirtualAllocEx(
+        hProcess,
+        lpAddress,
+        dwSize,
+        flAllocationType,
+        flProtect
+    );
+}
 void __stdcall HOOK_VirtualAllocEx(HOOK_Cbk cbk)
 {
     HOOK_VirtualAllocEx_Cbk = cbk;
@@ -2792,6 +2744,70 @@ void __stdcall HOOK_VirtualAllocEx(HOOK_Cbk cbk)
         HOOK_VirtualAllocEx_Cbk(HOOK_Error, L"DetourTransactionCommit err");
 }
 
+static HOOK_Cbk HOOK_CreateRemoteThread_Cbk = NULL;
+static _Ret_maybenull_ HANDLE(WINAPI* HOOK_Real_CreateRemoteThread)(
+    _In_ HANDLE hProcess,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    _In_ SIZE_T dwStackSize,
+    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
+    _In_opt_ LPVOID lpParameter,
+    _In_ DWORD dwCreationFlags,
+    _Out_opt_ LPDWORD lpThreadId
+    ) = NULL;
+static WINBASEAPI _Ret_maybenull_ HANDLE WINAPI HOOK_Catch_CreateRemoteThread(
+    _In_ HANDLE hProcess,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    _In_ SIZE_T dwStackSize,
+    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
+    _In_opt_ LPVOID lpParameter,
+    _In_ DWORD dwCreationFlags,
+    _Out_opt_ LPDWORD lpThreadId
+)
+{
+    HOOK_CreateRemoteThread_Cbk(HOOK_Catch, L"");
+    return HOOK_Real_CreateRemoteThread(
+        hProcess,
+        lpThreadAttributes,
+        dwStackSize,
+        lpStartAddress,
+        lpParameter,
+        dwCreationFlags,
+        lpThreadId
+    );
+}
+static WINBASEAPI _Ret_maybenull_ HANDLE(WINAPI* HOOK_Real_CreateRemoteThreadEx)(
+    _In_ HANDLE hProcess,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    _In_ SIZE_T dwStackSize,
+    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
+    _In_opt_ LPVOID lpParameter,
+    _In_ DWORD dwCreationFlags,
+    _In_opt_ LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
+    _Out_opt_ LPDWORD lpThreadId
+    ) = NULL;
+static WINBASEAPI _Ret_maybenull_ HANDLE WINAPI HOOK_Catch_CreateRemoteThreadEx(
+    _In_ HANDLE hProcess,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
+    _In_ SIZE_T dwStackSize,
+    _In_ LPTHREAD_START_ROUTINE lpStartAddress,
+    _In_opt_ LPVOID lpParameter,
+    _In_ DWORD dwCreationFlags,
+    _In_opt_ LPPROC_THREAD_ATTRIBUTE_LIST lpAttributeList,
+    _Out_opt_ LPDWORD lpThreadId
+)
+{
+    HOOK_CreateRemoteThread_Cbk(HOOK_Catch, L"");
+    return HOOK_Real_CreateRemoteThreadEx(
+        hProcess,
+        lpThreadAttributes,
+        dwStackSize,
+        lpStartAddress,
+        lpParameter,
+        dwCreationFlags,
+        lpAttributeList,
+        lpThreadId
+    );
+}
 void WINAPI HOOK_CreateRemoteThread(HOOK_Cbk cbk)
 {
     HOOK_CreateRemoteThread_Cbk = cbk;
@@ -2800,7 +2816,9 @@ void WINAPI HOOK_CreateRemoteThread(HOOK_Cbk cbk)
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
     HOOK_Real_CreateRemoteThread = (decltype(HOOK_Real_CreateRemoteThread))DetourFindFunction("Kernel32.dll", "CreateRemoteThread");
+    HOOK_Real_CreateRemoteThreadEx = (decltype(HOOK_Real_CreateRemoteThreadEx))DetourFindFunction("Kernel32.dll", "CreateRemoteThreadEx");
     DetourAttach(&(PVOID&)HOOK_Real_CreateRemoteThread, HOOK_Catch_CreateRemoteThread);
+    DetourAttach(&(PVOID&)HOOK_Real_CreateRemoteThreadEx, HOOK_Catch_CreateRemoteThreadEx);
     LONG ret = DetourTransactionCommit();
     if (ret != NO_ERROR)
         HOOK_CreateRemoteThread_Cbk(HOOK_Error, L"DetourTransactionCommit err");
