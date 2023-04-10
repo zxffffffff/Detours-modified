@@ -4,7 +4,8 @@
 
 HOOK_IsDebugger([](HOOK_State state, LPCWSTR msg) {
   if (state == HOOK_Catch) {
-    // 反调试触发
+    // 反调试触发，建议退出进程
+    TerminateProcess(GetCurrentProcess(), 0);
   }
   else {
     // error -> msg
@@ -18,13 +19,20 @@ HOOK_IsDebugger([](HOOK_State state, LPCWSTR msg) {
 
 HOOK_VirtualAllocEx([](HOOK_State state, LPCWSTR msg) {
   if (state == HOOK_Catch) {
-    // 反DLL注入触发
+    // 反DLL注入触发，建议杀线程
+    TerminateThread(GetCurrentThread(), 0);
   }
   else {
     // error -> msg
   }
 });
 ```
+
+## DLL注入防御效果：
+![image](https://github.com/zxffffffff/Detours-modified/blob/main-modified/微信图片_20230410111932.png)
+![image](https://github.com/zxffffffff/Detours-modified/blob/main-modified/微信图片_20230410111925.png)
+
+
 
 # Microsoft Research Detours Package
 
