@@ -1,3 +1,5 @@
+【应用安全检测】已验证通过
+
 # 增加：反DLL调试
 ```c
 #include "detours.h"
