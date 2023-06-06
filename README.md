@@ -22,6 +22,7 @@ HOOK_IsDebugger([](HOOK_State state, LPCWSTR msg) {
 HOOK_VirtualAllocEx([](HOOK_State state, LPCWSTR msg) {
   if (state == HOOK_Catch) {
     // 反DLL注入触发，建议杀线程
+    // 警告：部分 Win32 API 调用可能会误触发，已知的有 ShellExecuteEx
     TerminateThread(GetCurrentThread(), 0);
   }
   else {
